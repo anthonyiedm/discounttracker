@@ -1,0 +1,191 @@
+﻿// src/models/Shop.ts
+import mongoose, { Document, Schema } from 'mongoose';
+
+
+export interface IShop extends Document {
+  shop: string;
+  accessToken: string;
+  plan: 'free' | 'basic' | 'pro';
+  isInstalled: boolean;
+  installedAt: Date;
+  uninstalledAt?: Date;
+  subscriptionId?: string;
+  subscriptionStatus?: 'active' | 'canceled' | 'expired';
+  currentPeriodEnd?: Date;
+}
+
+
+const shopSchema = new Schema({
+  shop: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  accessToken: {
+    type: String,
+    required: true
+  },
+  plan: {
+    type: String,
+    enum: ['free', 'basic', 'pro'],
+    default: 'free'
+  },
+  isInstalled: {
+    type: Boolean,
+    default: true
+  },
+  installedAt: {
+    type: Date,
+    default: Date.now
+  },
+  uninstalledAt: {
+    type: Date
+  },
+  subscriptionId: String,
+  subscriptionStatus: {
+    type: String,
+    enum: ['active', 'canceled', 'expired']
+  },
+  currentPeriodEnd: Date
+}, {
+  timestamps: true
+});
+
+
+// Indexes
+shopSchema.index({ shop: 1 });
+shopSchema.index({ createdAt: 1 });
+shopSchema.index({ subscriptionStatus: 1 });
+
+
+export const Shop = mongoose.model<IShop>('Shop', shopSchema);
+
+
+// src/models/Usage.ts
+export interface IUsage extends Document {
+  shop: string;
+  date: Date;
+  discountAttempts: number;
+  successfulAttempts: number;
+  failedAttempts: number;
+  monthlyUsage: number;
+}
+
+
+const usageSchema = new Schema({
+  shop: {
+    type: String,
+    required: true,
+    ref: 'Shop'
+  },
+  date: {
+    type: Date,
+    required: true
+  },
+  discountAttempts: {
+    type: Number,
+    default: 0
+  },
+  successfulAttempts: {
+    type: Number,
+    default: 0
+  },
+  failedAttempts: {
+    type: Number,
+    default: 0
+  },
+  monthlyUsage: {
+    type: Number,
+    default: 0
+  }
+}, {
+  timestamps: true
+});
+
+
+// Compound index for shop and date
+usageSchema.index({ shop: 1, date: 1 }, { unique: true });
+usageSchema.index({ date: 1 });
+
+
+export const Usage = mongoose.model<IUsage>('Usage', usageSchema);
+
+
+// src/models/ErrorLog.ts
+export interface IErrorLog extends Document {
+  shop: string;
+  message: string;
+  stack?: string;
+  severity: 'low' | 'medium' | 'high';
+  metadata?: Record<string, any>;
+}
+
+
+const errorLogSchema = new Schema({
+  shop: {
+    type: String,
+    required: true,
+    ref: 'Shop'
+  },
+  message: {
+    type: String,
+    required: true
+  },
+  stack: String,
+  severity: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'low'
+  },
+  metadata: {
+    type: Schema.Types.Mixed
+  }
+}, {
+  timestamps: true
+});
+
+
+errorLogSchema.index({ shop: 1, createdAt: -1 });
+errorLogSchema.index({ severity: 1 });
+
+
+export const ErrorLog = mongoose.model<IErrorLog>('ErrorLog', errorLogSchema);
+
+
+// src/models/Session.ts
+export interface ISession extends Document {
+  shop: string;
+  sessionToken: string;
+  expiresAt: Date;
+  isActive: boolean;
+}
+
+
+const sessionSchema = new Schema({
+  shop: {
+    type: String,
+    required: true,
+    ref: 'Shop'
+  },
+  sessionToken: {
+    type: String,
+    required: true
+  },
+  expiresAt: {
+    type: Date,
+    required: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  }
+}, {
+  timestamps: true
+});
+
+
+sessionSchema.index({ shop: 1, sessionToken: 1 });
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+
+export const Session = mongoose.model<ISession>('Session', sessionSchema);

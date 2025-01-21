@@ -1,0 +1,413 @@
+﻿import React, { useState, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Calendar } from '@/components/ui/calendar';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Download, Search } from 'lucide-react';
+
+
+const DISCOUNT_USAGE_QUERY = `
+  query getDiscountUsage($startDate: String!, $endDate: String!) {
+    codeDiscountNodes(first: 100) {
+      edges {
+        node {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              codes(first: 100) {
+                edges {
+                  node {
+                    code
+                    usageCount
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    orders(first: 100, query: "created_at:>=$startDate AND created_at:<=$endDate") {
+      edges {
+        node {
+          id
+          discountApplications(first: 10) {
+            edges {
+              node {
+                code
+                type
+                value {
+                  ... on MoneyV2 {
+                    amount
+                    currencyCode
+                  }
+                  ... on PricingPercentageValue {
+                    percentage
+                  }
+                }
+              }
+            }
+          }
+          customer {
+            id
+            email
+          }
+          createdAt
+          cancelledAt
+          fulfillmentStatus
+        }
+      }
+    }
+  }
+`;
+
+
+const DiscountCodeTracker = () => {
+  const [dateRange, setDateRange] = useState({
+    from: subMonths(new Date(), 1),
+    to: new Date()
+  });
+  const [discountAttempts, setDiscountAttempts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const [sessionToken, setSessionToken] = useState(null);
+
+
+  const maxDate = new Date();
+  const minDate = subMonths(new Date(), 12);
+
+
+  // Helper functions
+  function subMonths(date, months) {
+    const newDate = new Date(date);
+    newDate.setMonth(newDate.getMonth() - months);
+    return newDate;
+  }
+
+
+  function isAfter(date1, date2) {
+    return new Date(date1) > new Date(date2);
+  }
+
+
+  function isBefore(date1, date2) {
+    return new Date(date1) < new Date(date2);
+  }
+
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+
+  const getSessionToken = async () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const shop = params.get('shop');
+      
+      if (!shop) {
+        throw new Error('Missing shop parameter');
+      }
+
+
+      const response = await fetch('/api/auth/token', {
+        credentials: 'include'
+      });
+
+
+      if (!response.ok) {
+        throw new Error('Failed to get session token');
+      }
+
+
+      const { accessToken } = await response.json();
+      setSessionToken(accessToken);
+      return accessToken;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      window.location.href = '/api/auth';
+      return null;
+    }
+  };
+
+
+  const executeGraphQL = useCallback(async (query, variables) => {
+    try {
+      const token = sessionToken || await getSessionToken();
+      
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+
+      const params = new URLSearchParams(window.location.search);
+      const shop = params.get('shop');
+
+
+      const response = await fetch('/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Shopify-Shop-Domain': shop
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          query,
+          variables,
+        }),
+      });
+
+
+      if (response.status === 401 || response.status === 403) {
+        setSessionToken(null);
+        window.location.href = '/api/auth';
+        return null;
+      }
+
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+
+      const { data, errors } = await response.json();
+
+
+      if (errors) {
+        throw new Error(JSON.stringify(errors));
+      }
+
+
+      return data;
+    } catch (error) {
+      console.error('GraphQL error:', error);
+      throw error;
+    }
+  }, [sessionToken]);
+
+
+  const handleDateSelect = (newRange) => {
+    if (!newRange) {
+      setDateRange({ from: subMonths(new Date(), 1), to: new Date() });
+      return;
+    }
+    
+    let { from, to } = newRange;
+    
+    if (from && isBefore(from, minDate)) {
+      from = new Date(minDate);
+    }
+    if (to && isAfter(to, maxDate)) {
+      to = new Date(maxDate);
+    }
+    
+    if (from && to && !isAfter(from, to)) {
+      setDateRange({ from, to });
+    }
+  };
+
+
+  const fetchDiscountAttempts = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await executeGraphQL(DISCOUNT_USAGE_QUERY, {
+        startDate: dateRange.from.toISOString(),
+        endDate: dateRange.to.toISOString()
+      });
+
+
+      if (data) {
+        const processedAttempts = processGraphQLResponse(data);
+        setDiscountAttempts(processedAttempts);
+        showNotification(`Found ${processedAttempts.length} discount code attempts`);
+      }
+    } catch (err) {
+      setError(err.message);
+      showNotification(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const processGraphQLResponse = (data) => {
+    const attempts = [];
+    
+    data.orders.edges.forEach(({ node: order }) => {
+      order.discountApplications.edges.forEach(({ node: discount }) => {
+        attempts.push({
+          timestamp: order.createdAt,
+          code: discount.code,
+          status: 'success',
+          customerEmail: order.customer?.email || 'anonymous',
+          orderId: order.id,
+          checkoutStatus: order.cancelledAt ? 'cancelled' : 'completed'
+        });
+      });
+    });
+
+
+    return attempts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  };
+
+
+  const exportToCSV = () => {
+    const headers = ['Timestamp', 'Discount Code', 'Status', 'Customer Email', 'Order ID', 'Checkout Status'];
+    const csvContent = [
+      headers.join(','),
+      ...discountAttempts.map(attempt => [
+        attempt.timestamp,
+        attempt.code,
+        attempt.status,
+        attempt.customerEmail,
+        attempt.orderId,
+        attempt.checkoutStatus
+      ].join(','))
+    ].join('\n');
+
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `discount-attempts-${dateRange.from.toISOString().split('T')[0]}-${dateRange.to.toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+
+    showNotification('Export successful');
+  };
+
+
+  return (
+    <div className="p-6 space-y-6">
+      {notification && (
+        <div className={`fixed top-4 right-4 p-4 rounded-md shadow-lg ${
+          notification.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+        }`}>
+          {notification.message}
+        </div>
+      )}
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Discount Code Usage Tracker</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex space-x-4">
+              <div className="space-y-2">
+                <Calendar
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={handleDateSelect}
+                  disabled={(date) => 
+                    isAfter(date, maxDate) || 
+                    isBefore(date, minDate)
+                  }
+                  className="rounded-md border"
+                />
+                <div className="text-sm text-gray-500">
+                  Data available from {minDate.toLocaleDateString()} to {maxDate.toLocaleDateString()}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Button 
+                  onClick={fetchDiscountAttempts}
+                  disabled={loading}
+                  className="w-full"
+                >
+                  <Search className="mr-2 h-4 w-4" />
+                  {loading ? 'Loading...' : 'Search Attempts'}
+                </Button>
+                <Button 
+                  onClick={exportToCSV}
+                  disabled={discountAttempts.length === 0}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export to CSV
+                </Button>
+              </div>
+            </div>
+
+
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse bg-white">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Timestamp</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Discount Code</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Customer Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Order ID</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Checkout Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discountAttempts.map((attempt, index) => (
+                    <tr 
+                      key={index} 
+                      className="border-b border-gray-200 hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {new Date(attempt.timestamp).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{attempt.code}</td>
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`px-2 py-1 rounded-full text-sm ${
+                          attempt.status === 'success' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {attempt.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <span className={attempt.customerEmail === 'anonymous' ? 'text-gray-500 italic' : ''}>
+                          {attempt.customerEmail}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <span className={attempt.orderId === 'incomplete' ? 'text-gray-500 italic' : ''}>
+                          {attempt.orderId}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`px-2 py-1 rounded-full text-sm ${
+                          attempt.checkoutStatus === 'completed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {attempt.checkoutStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+
+export default DiscountCodeTracker;

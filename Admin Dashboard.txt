@@ -1,0 +1,219 @@
+﻿// src/components/AdminDashboard/index.tsx
+import React, { useState, useEffect } from 'react';
+
+
+// Types
+interface AdminMetrics {
+  totalUsers: number;
+  activeUsers: number;
+  averageRating: number;
+  errorCount: number;
+}
+
+
+interface ErrorLog {
+  id: string;
+  message: string;
+  timestamp: string;
+  stack?: string;
+}
+
+
+// MetricsCard Component
+const MetricsCard: React.FC<{
+  title: string;
+  value: number;
+  icon: 'users' | 'activity' | 'star';
+  isRating?: boolean;
+}> = ({ title, value, icon, isRating }) => {
+  // Simple icon renderer
+  const renderIcon = () => {
+    switch (icon) {
+      case 'users':
+        return (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        );
+      case 'activity':
+        return (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        );
+      case 'star':
+        return (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+          </svg>
+        );
+    }
+  };
+
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+        <span className="text-gray-500">
+          {renderIcon()}
+        </span>
+      </div>
+      <p className="mt-2 text-3xl font-semibold text-gray-900">
+        {isRating ? `${value.toFixed(1)}/5` : value.toLocaleString()}
+      </p>
+    </div>
+  );
+};
+
+
+// ErrorLogs Component
+const ErrorLogs: React.FC<{
+  logs: ErrorLog[];
+  onClear: () => void;
+  loading: boolean;
+}> = ({ logs, onClear, loading }) => {
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="bg-white rounded-lg shadow">
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-medium text-gray-900">Error Logs</h2>
+          <button 
+            onClick={onClear}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+          >
+            Clear Logs
+          </button>
+        </div>
+        <div className="space-y-4">
+          {logs.map((log) => (
+            <div key={log.id} className="p-4 bg-red-50 rounded-md">
+              <p className="text-red-800 font-medium">{log.message}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {new Date(log.timestamp).toLocaleString()}
+              </p>
+              {log.stack && (
+                <pre className="mt-2 text-xs text-gray-600 overflow-x-auto">
+                  {log.stack}
+                </pre>
+              )}
+            </div>
+          ))}
+          {logs.length === 0 && (
+            <p className="text-gray-500 text-center py-4">No errors logged</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// Main AdminDashboard Component
+export const AdminDashboard: React.FC = () => {
+  const [metrics, setMetrics] = useState<AdminMetrics>({
+    totalUsers: 0,
+    activeUsers: 0,
+    averageRating: 0,
+    errorCount: 0
+  });
+  const [logs, setLogs] = useState<ErrorLog[]>([]);
+  const [loading, setLoading] = useState({
+    metrics: true,
+    logs: true
+  });
+
+
+  useEffect(() => {
+    fetchMetrics();
+    fetchErrorLogs();
+  }, []);
+
+
+  const fetchMetrics = async () => {
+    try {
+      const response = await fetch('/api/admin/metrics');
+      const data = await response.json();
+      setMetrics(data);
+    } catch (error) {
+      console.error('Error fetching metrics:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, metrics: false }));
+    }
+  };
+
+
+  const fetchErrorLogs = async () => {
+    try {
+      const response = await fetch('/api/admin/error-logs');
+      const data = await response.json();
+      setLogs(data);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, logs: false }));
+    }
+  };
+
+
+  const clearLogs = async () => {
+    try {
+      await fetch('/api/admin/error-logs/clear', { method: 'POST' });
+      setLogs([]);
+    } catch (error) {
+      console.error('Error clearing logs:', error);
+    }
+  };
+
+
+  if (loading.metrics && loading.logs) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <MetricsCard 
+          title="Total Users"
+          value={metrics.totalUsers}
+          icon="users"
+        />
+        <MetricsCard 
+          title="Active Users"
+          value={metrics.activeUsers}
+          icon="activity"
+        />
+        <MetricsCard 
+          title="Average Rating"
+          value={metrics.averageRating}
+          icon="star"
+          isRating
+        />
+      </div>
+      <ErrorLogs 
+        logs={logs}
+        onClear={clearLogs}
+        loading={loading.logs}
+      />
+    </div>
+  );
+};
+
+
+export default AdminDashboard;

@@ -1,0 +1,181 @@
+﻿// src/components/SupportPage/index.tsx
+import React, { useState } from 'react';
+
+
+interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+
+interface ContactFormData {
+  email: string;
+  subject: string;
+  message: string;
+}
+
+
+// FAQ Items
+const faqItems: FAQItem[] = [
+  {
+    question: "How far back can I track discount code attempts?",
+    answer: "You can track discount code attempts up to 12 months in the past. This includes both successful and unsuccessful attempts, as well as attempts from anonymous users."
+  },
+  {
+    question: "Can I export the discount code data?",
+    answer: "Yes, you can export all tracked discount code data to CSV format. The export includes timestamps, discount codes used, success status, customer information (if available), and checkout status."
+  },
+  {
+    question: "How does anonymous user tracking work?",
+    answer: "The app tracks all discount code attempts, even if a user hasn't entered their email address. These attempts are marked as 'anonymous' in the tracking system."
+  },
+  {
+    question: "What's the difference between 'completed' and 'abandoned' checkout status?",
+    answer: "A 'completed' status means the customer finished their purchase using the discount code. 'Abandoned' means they entered the code but didn't complete the checkout process."
+  }
+];
+
+
+export const SupportPage: React.FC = () => {
+  const [formData, setFormData] = useState<ContactFormData>({
+    email: '',
+    subject: '',
+    message: ''
+  });
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitStatus('loading');
+
+
+    try {
+      const response = await fetch('/api/support/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+
+      setSubmitStatus('success');
+      setFormData({ email: '', subject: '', message: '' });
+    } catch (error) {
+      setSubmitStatus('error');
+      console.error('Support form error:', error);
+    }
+  };
+
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* FAQ Section */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-2xl font-bold mb-6">Frequently Asked Questions</h2>
+          <div className="space-y-6">
+            {faqItems.map((item, index) => (
+              <div key={index} className="border-b border-gray-200 pb-6 last:border-0">
+                <h3 className="text-lg font-medium mb-2">{item.question}</h3>
+                <p className="text-gray-600">{item.answer}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+
+        {/* Contact Form */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-2xl font-bold mb-6">Contact Support</h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                name="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Subject
+              </label>
+              <input
+                type="text"
+                name="subject"
+                required
+                value={formData.subject}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Message
+              </label>
+              <textarea
+                name="message"
+                required
+                value={formData.message}
+                onChange={handleChange}
+                rows={5}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+
+            <button
+              type="submit"
+              disabled={submitStatus === 'loading'}
+              className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                submitStatus === 'loading' ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {submitStatus === 'loading' ? 'Sending...' : 'Send Message'}
+            </button>
+
+
+            {/* Status Messages */}
+            {submitStatus === 'success' && (
+              <div className="mt-4 p-4 bg-green-50 rounded-md">
+                <p className="text-green-800">Message sent successfully! We'll get back to you soon.</p>
+              </div>
+            )}
+
+
+            {submitStatus === 'error' && (
+              <div className="mt-4 p-4 bg-red-50 rounded-md">
+                <p className="text-red-800">Failed to send message. Please try again later.</p>
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+export default SupportPage;

@@ -1,0 +1,248 @@
+﻿# Discount Tracker App - Complete Setup SOP
+
+
+## Phase 1: Initial Setup & Configuration
+
+
+### Step 1: Shopify Partner Setup
+1. Log into Shopify Partners (partners.shopify.com)
+2. Create new app:
+   ```
+   Navigate to Apps → Create App
+   Name: Discount Tracker
+   App URL: https://your-domain.com
+   Allowed redirection URLs: 
+   - https://your-domain.com/auth/callback
+   - https://your-domain.com/auth/token
+   ```
+3. Note down credentials:
+   - API Key
+   - API Secret Key
+   - App URL
+
+
+### Step 2: Local Development Environment
+1. Install required software:
+   ```bash
+   # Required software
+   - Node.js (v16 or higher)
+   - MongoDB (v4.4 or higher)
+   - Redis (v6 or higher)
+   - Git
+   ```
+
+
+2. Create project directory:
+   ```bash
+   mkdir discount-tracker
+   cd discount-tracker
+   git init
+   ```
+
+
+3. Create initial project structure:
+   ```bash
+   # Create directory structure
+   mkdir -p src/{components,pages,lib,middleware,utils}
+   mkdir -p src/components/{ui,AdminDashboard,DiscountTracker,ReviewBanner,SupportPage}
+   ```
+
+
+## Phase 2: Project Configuration
+
+
+### Step 1: Initialize Project
+```bash
+# Initialize npm project
+npm init -y
+
+
+# Install core dependencies
+npm install react react-dom next @shopify/app-bridge-react
+npm install mongodb mongoose redis ioredis
+npm install tailwindcss @headlessui/react lucide-react
+
+
+# Install dev dependencies
+npm install --save-dev typescript @types/react @types/node
+npm install --save-dev jest @testing-library/react @testing-library/jest-dom
+```
+
+
+### Step 2: Configure Environment
+1. Create `.env` file:
+```env
+# Shopify
+SHOPIFY_API_KEY=your_api_key
+SHOPIFY_API_SECRET=your_api_secret
+SHOPIFY_SCOPES=read_products,write_products,read_orders
+SHOPIFY_APP_URL=https://your-domain.com
+
+
+# Database
+DATABASE_URL=mongodb://localhost:27017/discount_tracker
+REDIS_URL=redis://localhost:6379
+
+
+# Security
+SESSION_SECRET=your_session_secret
+ENCRYPTION_KEY=your_32_byte_encryption_key
+
+
+# Environment
+NODE_ENV=development
+```
+
+
+2. Create `next.config.js`:
+```javascript
+module.exports = {
+  reactStrictMode: true,
+  env: {
+    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY,
+    SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL,
+  }
+};
+```
+
+
+## Phase 3: Component Implementation
+
+
+### Step 1: Base Components
+1. Create UI components:
+```bash
+# Create base UI components
+touch src/components/ui/Button.tsx
+touch src/components/ui/Card.tsx
+touch src/components/ui/Alert.tsx
+```
+
+
+2. Implement DiscountTracker component:
+```bash
+# Create main component files
+touch src/components/DiscountTracker/index.tsx
+touch src/components/DiscountTracker/DataTable.tsx
+touch src/components/DiscountTracker/FilterBar.tsx
+```
+
+
+### Step 2: Admin Components
+```bash
+# Create admin components
+touch src/components/AdminDashboard/index.tsx
+touch src/components/AdminDashboard/MetricsCard.tsx
+touch src/components/AdminDashboard/ErrorLogs.tsx
+```
+
+
+## Phase 4: Backend Implementation
+
+
+### Step 1: Database Setup
+1. Set up MongoDB:
+```bash
+# Start MongoDB
+mongod
+
+
+# Create database and indexes
+mongosh
+use discount_tracker
+db.shops.createIndex({ shop: 1 }, { unique: true })
+db.sessions.createIndex({ expires: 1 }, { expireAfterSeconds: 0 })
+```
+
+
+2. Implement database models:
+```bash
+# Create model files
+touch src/models/Shop.ts
+touch src/models/Usage.ts
+touch src/models/ErrorLog.ts
+```
+
+
+### Step 2: API Routes
+```bash
+# Create API routes
+mkdir -p src/pages/api/{auth,webhooks,graphql}
+touch src/pages/api/auth/[...auth].ts
+touch src/pages/api/webhooks/[topic].ts
+touch src/pages/api/graphql/proxy.ts
+```
+
+
+## Phase 5: Testing & Deployment
+
+
+### Step 1: Testing Setup
+```bash
+# Create test files
+mkdir -p src/__tests__
+touch src/__tests__/DiscountTracker.test.tsx
+touch src/__tests__/AdminDashboard.test.tsx
+
+
+# Run tests
+npm test
+```
+
+
+### Step 2: Production Deployment
+1. Server setup:
+```bash
+# Install required software on server
+apt-get update
+apt-get install nginx mongodb redis-server
+
+
+# Configure Nginx
+nano /etc/nginx/sites-available/discount-tracker
+```
+
+
+2. Deploy application:
+```bash
+# Build application
+npm run build
+
+
+# Start application
+pm2 start npm --name "discount-tracker" -- start
+```
+
+
+## Phase 6: Verification & Launch
+
+
+### Step 1: Testing Checklist
+1. Verify all features:
+   - [ ] Authentication works
+   - [ ] Discount tracking functions
+   - [ ] Admin dashboard displays correctly
+   - [ ] Webhooks are receiving data
+   - [ ] Error logging works
+
+
+2. Security checks:
+   - [ ] HTTPS is configured
+   - [ ] API endpoints are protected
+   - [ ] Session handling is secure
+   - [ ] Rate limiting is active
+
+
+### Step 2: Launch
+1. Submit app for review in Shopify Partner dashboard
+2. Monitor for any issues:
+   - Check error logs
+   - Monitor performance metrics
+   - Watch database usage
+
+
+Would you like me to:
+1. Provide more detailed instructions for any specific phase?
+2. Add configuration examples for specific components?
+3. Include troubleshooting guides?
+4. Add monitoring setup instructions?

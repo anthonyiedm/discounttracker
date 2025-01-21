@@ -1,0 +1,210 @@
+﻿// src/pages/api/index.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { validateSession } from '../../utils/auth';
+import { Shop, Usage, ErrorLog, Session } from '../../models';
+
+
+// Common middleware for API routes
+export const withAuth = async (
+  req: NextApiRequest, 
+  res: NextApiResponse, 
+  handler: (shop: string) => Promise<void>
+) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ error: 'No authorization token provided' });
+    }
+
+
+    const session = await Session.findOne({
+      sessionToken: token,
+      isActive: true,
+      expiresAt: { $gt: new Date() }
+    }).populate('shop');
+
+
+    if (!session) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+
+
+    await handler(session.shop);
+  } catch (error) {
+    console.error('API error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+
+// API Route Handlers
+export const apiHandlers = {
+  // Discount Tracking
+  async getDiscountData(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      const { startDate, endDate } = req.query;
+      const data = await Usage.find({
+        shop,
+        date: {
+          $gte: new Date(startDate as string),
+          $lte: new Date(endDate as string)
+        }
+      }).sort({ date: -1 });
+      res.json(data);
+    });
+  },
+
+
+  // Admin Metrics
+  async getAdminMetrics(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      // Get all relevant metrics
+      const [
+        totalUsers,
+        activeUsers,
+        errorCount,
+        averageRating
+      ] = await Promise.all([
+        Shop.countDocuments({ isInstalled: true }),
+        Usage.distinct('shop', {
+          date: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+        }).then(shops => shops.length),
+        ErrorLog.countDocuments({
+          shop,
+          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }),
+        4.5 // Example - implement actual rating logic
+      ]);
+
+
+      res.json({
+        totalUsers,
+        activeUsers,
+        errorCount,
+        averageRating
+      });
+    });
+  },
+
+
+  // Error Logs
+  async getErrorLogs(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      const logs = await ErrorLog.find({ shop })
+        .sort({ createdAt: -1 })
+        .limit(100);
+      res.json(logs);
+    });
+  },
+
+
+  async createErrorLog(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      const { message, stack, severity, metadata } = req.body;
+      const log = await ErrorLog.create({
+        shop,
+        message,
+        stack,
+        severity,
+        metadata
+      });
+      res.status(201).json(log);
+    });
+  },
+
+
+  async clearErrorLogs(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      await ErrorLog.deleteMany({ shop });
+      res.json({ message: 'Logs cleared successfully' });
+    });
+  },
+
+
+  // Support
+  async submitSupportRequest(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      const { email, subject, message } = req.body;
+      // Implement support ticket creation
+      res.json({ message: 'Support request submitted successfully' });
+    });
+  },
+
+
+  // Usage Tracking
+  async trackUsage(req: NextApiRequest, res: NextApiResponse) {
+    await withAuth(req, res, async (shop) => {
+      const { type } = req.body;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+
+      await Usage.findOneAndUpdate(
+        { shop, date: today },
+        {
+          $inc: {
+            discountAttempts: 1,
+            [`${type}Attempts`]: 1
+          }
+        },
+        { upsert: true }
+      );
+
+
+      res.json({ message: 'Usage tracked successfully' });
+    });
+  }
+};
+
+
+// API Route Configuration
+const routeConfig = {
+  '/api/discount-data': {
+    GET: apiHandlers.getDiscountData
+  },
+  '/api/admin/metrics': {
+    GET: apiHandlers.getAdminMetrics
+  },
+  '/api/admin/error-logs': {
+    GET: apiHandlers.getErrorLogs,
+    POST: apiHandlers.createErrorLog,
+    DELETE: apiHandlers.clearErrorLogs
+  },
+  '/api/support': {
+    POST: apiHandlers.submitSupportRequest
+  },
+  '/api/usage': {
+    POST: apiHandlers.trackUsage
+  }
+};
+
+
+// Generic API Handler
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const path = req.url?.split('?')[0];
+  const method = req.method as keyof typeof routeConfig[string];
+
+
+  const handler = path ? routeConfig[path]?.[method] : undefined;
+
+
+  if (!handler) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+
+  await handler(req, res);
+}
+
+
+// Type definitions
+export type ApiResponse<T> = {
+  data?: T;
+  error?: string;
+};
+
+
+export type ApiHandler<T> = (
+  req: NextApiRequest,
+  res: NextApiResponse<ApiResponse<T>>
+) => Promise<void>;

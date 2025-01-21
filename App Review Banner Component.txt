@@ -1,0 +1,157 @@
+﻿// src/components/ReviewBanner/index.tsx
+import React, { useState, useEffect } from 'react';
+
+
+const USAGE_THRESHOLD_DAYS = 7;
+const LOCAL_STORAGE_KEY = 'app_review_status';
+
+
+// StarIcon component
+const StarIcon: React.FC<{ filled?: boolean }> = ({ filled = true }) => (
+  <svg 
+    className={`w-5 h-5 ${filled ? 'text-yellow-400' : 'text-gray-300'}`}
+    fill={filled ? 'currentColor' : 'none'}
+    stroke="currentColor" 
+    viewBox="0 0 24 24"
+  >
+    <path 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      strokeWidth={2} 
+      d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+    />
+  </svg>
+);
+
+
+// CloseIcon component
+const CloseIcon: React.FC = () => (
+  <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+
+export const ReviewBanner: React.FC = () => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+
+  useEffect(() => {
+    checkShouldShowBanner();
+  }, []);
+
+
+  const checkShouldShowBanner = async () => {
+    try {
+      // Check local storage first
+      const storedStatus = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (storedStatus === 'reviewed' || storedStatus === 'dismissed') {
+        setLoading(false);
+        return;
+      }
+
+
+      // Check app installation date
+      const response = await fetch('/api/app/installation-date');
+      const { installedAt } = await response.json();
+      
+      const installDate = new Date(installedAt);
+      const daysSinceInstall = Math.floor((new Date().getTime() - installDate.getTime()) / (1000 * 60 * 60 * 24));
+
+
+      if (daysSinceInstall >= USAGE_THRESHOLD_DAYS) {
+        setIsVisible(true);
+        logAnalytics('impression');
+      }
+    } catch (error) {
+      console.error('Error checking banner status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const handleReviewClick = async () => {
+    try {
+      // Get shop URL for review
+      const response = await fetch('/api/app/review-url');
+      const { url } = await response.json();
+      
+      localStorage.setItem(LOCAL_STORAGE_KEY, 'reviewed');
+      logAnalytics('click');
+      window.open(url, '_blank');
+      setIsVisible(false);
+    } catch (error) {
+      console.error('Error handling review click:', error);
+    }
+  };
+
+
+  const handleDismiss = () => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, 'dismissed');
+    logAnalytics('dismiss');
+    setIsVisible(false);
+  };
+
+
+  const logAnalytics = async (action: 'impression' | 'click' | 'dismiss') => {
+    try {
+      await fetch('/api/analytics/review-banner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+    } catch (error) {
+      console.error('Error logging analytics:', error);
+    }
+  };
+
+
+  if (loading || !isVisible) {
+    return null;
+  }
+
+
+  return (
+    <div className="relative bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-100">
+      <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between flex-wrap">
+          <div className="flex-1 flex items-center">
+            <span className="flex p-2">
+              {[...Array(5)].map((_, index) => (
+                <StarIcon key={index} />
+              ))}
+            </span>
+            <p className="ml-3 font-medium text-gray-800">
+              <span className="md:hidden">Love the app?</span>
+              <span className="hidden md:inline">
+                Enjoying the Discount Code Tracker? Help other merchants discover it!
+              </span>
+            </p>
+          </div>
+          <div className="flex-shrink-0 order-2 sm:order-3 sm:ml-3">
+            <div className="flex space-x-4">
+              <button
+                onClick={handleReviewClick}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Leave a 5-star review
+              </button>
+              <button
+                onClick={handleDismiss}
+                className="p-2 hover:bg-blue-100 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                aria-label="Dismiss"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+export default ReviewBanner;
